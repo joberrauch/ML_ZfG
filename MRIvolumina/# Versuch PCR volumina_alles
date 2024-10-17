@@ -1,0 +1,142 @@
+# Versuch PCR volumina_alles
+
+package_packages <- c('tidyverse', 'mlr3', 'pls', 'glmnet', 'caret', 'data.table', 'ggplot2', 'randomForest', 'keras', 'tfruns', 'tfestimators')
+#install.packages(package_packages)
+library(tidyverse)
+library(glmnet)
+library(mlr3)
+library(caret)
+library(data.table)
+library(ggplot2)
+library(randomForest)
+library(keras)
+library(tfruns)
+library(tfestimators)
+library(pls)
+
+vol_alles <- readxl::read_xlsx('C:/Users/Johanner/R projects/MRIvolumina/ZfG_APOE4_Volumina.xlsx')
+
+# gebdatum zu alter
+geb_als_datum <- as.Date(vol_alles$Gebdatum)
+heute <- Sys.Date()
+age <- as.numeric(difftime(heute, geb_als_datum, units = "weeks")) %/% 52.25
+vol_alles$Gebdatum <- age
+vol_alles$Gebdatum <- vol_alles$Gebdatum %>% as.integer(vol_alles$Gebdatum)
+names(vol_alles)[names(vol_alles)=="Gebdatum"] <- "Alter"
+
+# select
+vol_pcr <- select(vol_alles, c(
+  'Alter',
+  'TIV',
+  'Norm_WM_Volumen',
+  'Norm_GM_Volumen',
+  'Norm_Großhirnrinde_Volumen',
+  'Norm_R Frontallappen_Volumen',
+  'Norm_L Frontallappen_Volumen',
+  'Norm_R Parietallappen_Volumen',
+  'Norm_L Parietallappen_Volumen',
+  'Norm_R Precuneus_Volumen',
+  'Norm_L Precuneus_Volumen',
+  'Norm_L Temporallappen_Volumen',
+  'Norm_R Temporallappen_Volumen',
+  'Norm_R Okzipitallappen_Volumen',
+  'Norm_L Okzipitallappen_Volumen',
+  'Norm_Gesamthirn_Volumen',
+  'Norm_R Pallidum_Volumen', 
+  'Norm_R Gyrus Parahippocampalis_Volumen', 
+  'Norm_R Putamen_Volumen', 'Norm_L Putamen_Volumen', 
+  'Norm_Vierter Ventrikel_Volumen', 
+  'Norm_L Regio Entorhinalis_Volumen', 
+  'Norm_L Gyrus Parahippocampalis_Volumen', 
+  'Norm_L Pallidum_Volumen', 
+  'Norm_Mesenzephalon_Volumen', 
+  'Norm_Dritter Ventrikel_Volumen', 
+  'Norm_R Hippocampus_Volumen', 
+  'Norm_L Hippocampus_Volumen',
+  'Norm_L Thalamus_Volumen', 
+  'Norm_R Thalamus_Volumen', 
+  'Norm_Hirnstamm_Volumen', 
+  'Norm_R Nucleus Caudatus_Volumen', 
+  'Norm_L Nucleus Caudatus_Volumen',
+  'Norm_R Regio Entorhinalis_Volumen', 
+  'Norm_Pons_Volumen'))
+
+str(vol_pcr)
+set.seed(2)
+
+# aufsetzen von trainings und testsplit 70/30
+index_vol_pcr <- sample(2, nrow(vol_pcr), replace = TRUE, prob = c(0.7, 0.3))
+vol_pcr_train <- vol_pcr[index_vol_pcr == 1, ]
+vol_pcr_test <- vol_pcr[index_vol_pcr == 2, ]
+
+#calculate principal components
+vol_pcr2 <- select(vol_alles, c(
+  #'Alter',
+  #'TIV',
+  'Norm_WM_Volumen',
+  'Norm_GM_Volumen',
+  'Norm_Großhirnrinde_Volumen',
+  'Norm_R Frontallappen_Volumen',
+  'Norm_L Frontallappen_Volumen',
+  'Norm_R Parietallappen_Volumen',
+  'Norm_L Parietallappen_Volumen',
+  'Norm_R Precuneus_Volumen',
+  'Norm_L Precuneus_Volumen',
+  'Norm_L Temporallappen_Volumen',
+  'Norm_R Temporallappen_Volumen',
+  'Norm_R Okzipitallappen_Volumen',
+  'Norm_L Okzipitallappen_Volumen',
+  'Norm_Gesamthirn_Volumen',
+  'Norm_R Pallidum_Volumen', 
+  'Norm_R Gyrus Parahippocampalis_Volumen', 
+  'Norm_R Putamen_Volumen', 'Norm_L Putamen_Volumen', 
+  'Norm_Vierter Ventrikel_Volumen', 
+  'Norm_L Regio Entorhinalis_Volumen', 
+  'Norm_L Gyrus Parahippocampalis_Volumen', 
+  'Norm_L Pallidum_Volumen', 
+  'Norm_Mesenzephalon_Volumen', 
+  'Norm_Dritter Ventrikel_Volumen', 
+  'Norm_R Hippocampus_Volumen', 
+  'Norm_L Hippocampus_Volumen',
+  'Norm_L Thalamus_Volumen', 
+  'Norm_R Thalamus_Volumen', 
+  'Norm_Hirnstamm_Volumen', 
+  'Norm_R Nucleus Caudatus_Volumen', 
+  'Norm_L Nucleus Caudatus_Volumen',
+  'Norm_R Regio Entorhinalis_Volumen', 
+  'Norm_Pons_Volumen'))
+pca <- prcomp(vol_pcr2, scale = TRUE)
+
+#reverse the signs
+pca$rotation <- -1*pca$rotation
+
+#reverse the signs of the scores
+pca$x <- -1*pca$x
+
+#display principal components
+pca$rotation
+
+#plot
+biplot(pca, scale = 0)
+
+#calculate total variance explained by each principal component
+pca$sdev^2 / sum(pca$sdev^2)
+
+#fit PCR model
+model <- pcr(Alter~., data = vol_pcr, scale = TRUE, validation = "CV")
+
+#visualize cross-validation plots
+validationplot(model)
+
+#train model with training data
+model <- pcr(Alter~., data = vol_pcr_train, scale = TRUE, validation = "CV")
+
+#make predictions on test data with 15 comp
+pcr_pred <- predict(model, vol_pcr_test, ncomp=15)
+
+#calculate RMSE
+pcr_rmse <- sqrt(mean((pcr_pred - vol_pcr_test$Alter)^2))
+
+# mean squared error zwischen mean und real
+mean1 <- mean(vol_pcr_train$Alter)
+pcr_mse_stupid <- sqrt(mean((vol_pcr_test$Alter - mean1)^2))
