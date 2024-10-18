@@ -15,7 +15,9 @@ library(h2o)
 library(xgboost)
 library(data.table)
 
-set.seed(2)
+#x <- sample(1:400,1)
+#292s
+set.seed(292)
 
 sauber <- fread('C:/Users/Johanner/R projects/Resilienz/alles_daten_test.csv')
 
@@ -51,6 +53,8 @@ sauber$tobacco_frequency <- sauber$tobacco_frequency %>% str_replace_all('Gelege
 sauber$tobacco_frequency <- sauber$tobacco_frequency %>% str_replace_all('Täglich', '2')
 sauber$tobacco_frequency <- as_factor(sauber$tobacco_frequency)
 
+#sauber <- sauber %>% select('age', 'BRS_tot', 'LSNS_tot', 'GDS_tot', 'BMI', 'chandler_score')
+
 # aufsetzen von trainings und testsplit 70/30
 index_sauber_gbm <- sample(2, nrow(sauber), replace = TRUE, prob = c(0.7, 0.3))
 sauber_train_gbm <- sauber[index_sauber_gbm == 1, ]
@@ -60,7 +64,7 @@ sauber_test_gbm <- sauber[index_sauber_gbm == 2, ]
 sauber_gbm <- gbm(
   formula = chandler_score ~ .,
   data = sauber_train_gbm,
-  distribution = "gaussian",  # SSE loss function
+  distribution = "gaussian",
   n.trees = 10000,
   shrinkage = 0.01,
   interaction.depth = 10,
@@ -81,4 +85,11 @@ gbm.perf(sauber_gbm, method = "cv")
 sauber_predictions_gbm <- predict(sauber_gbm, newdata = sauber_test_gbm)
 
 # mean squared error zwischen predicted chandler_score und realem chandler_score
-sauber_mse_gbm <- mean((sauber_test_gbm$chandler_score - sauber_predictions_gbm)^2)
+sauber_mse_gbm <- sqrt(mean((sauber_test_gbm$chandler_score - sauber_predictions_gbm)^2))
+
+# variablen gewichtung plotten
+plot1 <- plot(varImp(sauber_gbm,scale=TRUE), 
+  main = as.character(x), 
+  sub = as.character(sauber_mse_gbm)
+)
+print(plot1)
