@@ -15,8 +15,6 @@ library(h2o)
 library(xgboost)
 library(data.table)
 
-#x <- sample(1:400,1)
-#292s
 set.seed(292)
 
 sauber <- fread('C:/Users/Johanner/R projects/Resilienz/alles_daten_test.csv')
@@ -53,21 +51,39 @@ sauber$tobacco_frequency <- sauber$tobacco_frequency %>% str_replace_all('Gelege
 sauber$tobacco_frequency <- sauber$tobacco_frequency %>% str_replace_all('Täglich', '2')
 sauber$tobacco_frequency <- as_factor(sauber$tobacco_frequency)
 
-#sauber <- sauber %>% select('age', 'BRS_tot', 'LSNS_tot', 'GDS_tot', 'BMI', 'chandler_score')
+# target variable ist leicht rechtsverschoben -> transformation um normalverteilung darzustellen
+sauber$chandler_score <- log(sauber$chandler_score)
 
-# aufsetzen von trainings und testsplit 70/30
-index_sauber_gbm <- sample(2, nrow(sauber), replace = TRUE, prob = c(0.7, 0.3))
-sauber_train_gbm <- sauber[index_sauber_gbm == 1, ]
-sauber_test_gbm <- sauber[index_sauber_gbm == 2, ]
+# filtern von features welche sehr niedrige varianz haben
+nearZeroVar(sauber, saveMetrics = TRUE) %>% rownames_to_column() %>% filter(nzv)
+
+# standardisierung, normalisierung & pca
+#blueprint <- recipe(chandler_score ~ ., data = sauber_train_gbm) %>%
+  #step_YeoJohnson(all_numeric()) %>%
+  #step_center(all_numeric(), -all_outcomes()) %>%
+  #step_scale(all_numeric(), -all_outcomes()) %>% 
+  #step_pca(all_numeric(), -all_outcomes(),  threshold = .95)
+
+#sauber <- sauber %>% select('age', 'apoe_stat', 'SCDImem', '3IL_tot', 'BRS_tot', 'LSNS_tot', 'GDS_tot', 'BMI', 'weight', 'RR_sys', 'MAT_tot', 'tobacco_frequency', 'education','sex', 'chandler_score')
+
+# aufsetzen von trainings und testsplit 70/30 + stratify(balanced distribution von target variable)
+index_sauber_gbm <- initial_split(sauber, prop = 0.7, strata = 'chandler_score')
+sauber_train_gbm <- training(index_sauber_gbm)
+sauber_test_gbm <- testing(index_sauber_gbm)
+
+# anwenden von blueprint
+#prepare <- prep(blueprint, training = sauber_train_gbm)
+#trainfin <- bake(prepare, new_data = sauber_train_gbm)
+#testfin <- bake(prepare, new_data = sauber_test_gbm)
 
 # model
 sauber_gbm <- gbm(
   formula = chandler_score ~ .,
   data = sauber_train_gbm,
   distribution = "gaussian",
-  n.trees = 10000,
+  n.trees = 5000,
   shrinkage = 0.01,
-  interaction.depth = 10,
+  interaction.depth = 15,
   n.minobsinnode = 15,
   cv.folds = 20
 )
@@ -83,13 +99,15 @@ gbm.perf(sauber_gbm, method = "cv")
 
 # predictions fuer sauber_test_gbm
 sauber_predictions_gbm <- predict(sauber_gbm, newdata = sauber_test_gbm)
+sauber_predictions_gbm <- exp(sauber_predictions_gbm)
 
 # mean squared error zwischen predicted chandler_score und realem chandler_score
-sauber_mse_gbm <- sqrt(mean((sauber_test_gbm$chandler_score - sauber_predictions_gbm)^2))
+sauber_mse_gbm <- sqrt(mean((exp(sauber_test_gbm$chandler_score) - sauber_predictions_gbm)^2))
+
+# mean squared error zwischen mean und real
+mean1 <- mean(exp(sauber_train_gbm$chandler_score))
+pcr_mse_stupid <- sqrt(mean((exp(sauber_test_gbm$chandler_score) - mean1)^2))
 
 # variablen gewichtung plotten
-plot1 <- plot(varImp(sauber_gbm,scale=TRUE), 
-  main = as.character(x), 
-  sub = as.character(sauber_mse_gbm)
-)
+plot1 <- plot(varImp(sauber_gbm,scale=TRUE))
 print(plot1)
